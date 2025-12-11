@@ -218,3 +218,4 @@ outputs/
 
 # Pre-commit
 .pre-commit-cache/
+.env

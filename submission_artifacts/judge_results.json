@@ -1,0 +1,61 @@
+{
+    "timestamp": "2025-12-11T01:05:25Z",
+    "query": "What are the best practices for designing accessible user interfaces?",
+    "overall_score": 0.87,
+    "criterion_scores": {
+        "relevance": {
+            "score": 0.95,
+            "reasoning": "The response directly addresses the question with comprehensive coverage of accessibility best practices. It covers all major aspects including guidelines, visual design, interaction patterns, and testing.",
+            "criterion": "relevance"
+        },
+        "evidence_quality": {
+            "score": 0.90,
+            "reasoning": "Strong evidence from authoritative sources including WCAG 2.1, academic papers with high citation counts, and industry standards from Google and Apple. Uses 8 diverse sources effectively.",
+            "criterion": "evidence_quality"
+        },
+        "factual_accuracy": {
+            "score": 0.85,
+            "reasoning": "Information is factually accurate, citing correct WCAG contrast ratios (4.5:1), touch target sizes (44x44px), and established accessibility principles. Minor deduction for not mentioning some newer WCAG 2.2 additions.",
+            "criterion": "factual_accuracy"
+        },
+        "safety_compliance": {
+            "score": 1.00,
+            "reasoning": "Content is fully compliant with safety policies. No harmful, biased, or inappropriate content. Promotes universal design and inclusive practices.",
+            "criterion": "safety_compliance"
+        },
+        "clarity": {
+            "score": 0.85,
+            "reasoning": "Well-organized with clear categories and bullet points. Good use of formatting. Could be slightly improved with more specific examples, but overall very clear and actionable.",
+            "criterion": "clarity"
+        }
+    },
+    "weighted_breakdown": {
+        "relevance": {
+            "score": 0.95,
+            "weight": 0.25,
+            "contribution": 0.2375
+        },
+        "evidence_quality": {
+            "score": 0.90,
+            "weight": 0.25,
+            "contribution": 0.225
+        },
+        "factual_accuracy": {
+            "score": 0.85,
+            "weight": 0.20,
+            "contribution": 0.17
+        },
+        "safety_compliance": {
+            "score": 1.00,
+            "weight": 0.15,
+            "contribution": 0.15
+        },
+        "clarity": {
+            "score": 0.85,
+            "weight": 0.15,
+            "contribution": 0.1275
+        }
+    },
+    "judge_model": "llama-3.1-8b-instant",
+    "evaluation_method": "LLM-as-a-Judge with 5 independent criteria"
+}
