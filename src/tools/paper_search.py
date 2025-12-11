@@ -47,7 +47,10 @@ class PaperSearchTool:
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        Search for academic papers.
+        Search for academic papers using Semantic Scholar API.
+        
+        Uses the official API with proper authentication headers.
+        Based on: https://www.semanticscholar.org/product/api/tutorial
 
         Args:
             query: Search query
@@ -74,32 +77,85 @@ class PaperSearchTool:
         self.logger.info(f"Searching papers: {query}")
 
         try:
-            from semanticscholar import SemanticScholar
+            import requests
             
-            # Initialize Semantic Scholar client
-            sch = SemanticScholar(api_key=self.api_key)
+            # Use bulk search endpoint (recommended in tutorial)
+            url = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
             
-            # Define fields to retrieve
-            fields = kwargs.get("fields", [
-                "paperId", "title", "authors", "year", "abstract",
-                "citationCount", "url", "venue", "openAccessPdf"
-            ])
+            # Build year filter if provided
+            year_filter = None
+            if year_from and year_to:
+                year_filter = f"{year_from}-{year_to}"
+            elif year_from:
+                year_filter = f"{year_from}-"
+            elif year_to:
+                year_filter = f"-{year_to}"
             
-            # Perform search
-            results = sch.search_paper(
-                query, 
-                limit=self.max_results,
-                fields=fields
-            )
+            # Query parameters
+            params = {
+                "query": query,
+                "fields": "paperId,title,authors,year,abstract,citationCount,url,venue,openAccessPdf",
+                "limit": min(self.max_results, 100)  # API max is 100 per request
+            }
             
-            # Parse and filter results
-            papers = self._parse_results(results, year_from, year_to, min_citations)
+            if year_filter:
+                params["year"] = year_filter
             
-            self.logger.info(f"Found {len(papers)} papers")
-            return papers
+            # Headers with API key (CRITICAL: must use x-api-key header!)
+            headers = {}
+            if self.api_key:
+                headers["x-api-key"] = self.api_key
+            
+            # Make request
+            self.logger.debug(f"Requesting: {url} with params: {params}")
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                papers_data = data.get('data', [])
+                
+                # Parse results
+                papers = []
+                for paper in papers_data:
+                    # Apply citation filter
+                    citation_count = paper.get('citationCount', 0) or 0
+                    if citation_count < min_citations:
+                        continue
+                    
+                    # Parse authors
+                    authors = []
+                    for author in paper.get('authors', []):
+                        authors.append({"name": author.get('name', 'Unknown')})
+                    
+                    # Parse PDF URL
+                    pdf_url = None
+                    if paper.get('openAccessPdf'):
+                        pdf_url = paper['openAccessPdf'].get('url')
+                    
+                    papers.append({
+                        "paper_id": paper.get('paperId'),
+                        "title": paper.get('title', 'Unknown'),
+                        "authors": authors,
+                        "year": paper.get('year'),
+                        "abstract": paper.get('abstract', ''),
+                        "citation_count": citation_count,
+                        "url": paper.get('url', ''),
+                        "venue": paper.get('venue', ''),
+                        "pdf_url": pdf_url
+                    })
+                
+                self.logger.info(f"Found {len(papers)} papers")
+                return papers
+                
+            elif response.status_code == 429:
+                self.logger.warning("Rate limited by Semantic Scholar API. Try again later.")
+                return []
+            else:
+                self.logger.error(f"API error {response.status_code}: {response.text}")
+                return []
             
         except ImportError:
-            self.logger.error("semanticscholar library not installed. Run: pip install semanticscholar")
+            self.logger.error("requests library not installed. Run: pip install requests")
             return []
         except Exception as e:
             self.logger.error(f"Error searching papers: {e}")

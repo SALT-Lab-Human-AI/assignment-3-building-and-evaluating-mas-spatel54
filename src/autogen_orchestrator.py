@@ -18,6 +18,7 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
 from src.agents.autogen_agents import create_research_team
+from src.guardrails.safety_manager import SafetyManager
 
 
 class AutoGenOrchestrator:
@@ -38,13 +39,18 @@ class AutoGenOrchestrator:
         """
         self.config = config
         self.logger = logging.getLogger("autogen_orchestrator")
-        
+
+        # Initialize safety manager
+        safety_config = config.get("safety", {})
+        self.safety_manager = SafetyManager(safety_config)
+        self.logger.info(f"Safety manager initialized (enabled: {self.safety_manager.enabled})")
+
         # Create the research team
         self.logger.info("Creating research team...")
         self.team = create_research_team(config)
-        
+
         self.logger.info("Research team created successfully")
-        
+
         # Workflow trace for debugging and UI display
         self.workflow_trace: List[Dict[str, Any]] = []
 
@@ -62,9 +68,28 @@ class AutoGenOrchestrator:
             - response: Final synthesized response
             - conversation_history: Full conversation between agents
             - metadata: Additional information about the process
+            - safety_events: List of safety events triggered (if any)
         """
         self.logger.info(f"Processing query: {query}")
-        
+
+        # Check input safety
+        input_safety = self.safety_manager.check_input_safety(query)
+        if not input_safety["safe"]:
+            self.logger.warning("Query blocked due to safety violations")
+            return {
+                "query": query,
+                "response": self.safety_manager.on_violation.get(
+                    "message",
+                    "Your query cannot be processed due to safety policies."
+                ),
+                "conversation_history": [],
+                "metadata": {
+                    "blocked": True,
+                    "reason": "input_safety_violation"
+                },
+                "safety_events": input_safety.get("violations", [])
+            }
+
         try:
             # Run the async query processing
             loop = asyncio.get_event_loop()
@@ -73,15 +98,15 @@ class AutoGenOrchestrator:
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     result = pool.submit(
-                        asyncio.run, 
+                        asyncio.run,
                         self._process_query_async(query, max_rounds)
                     ).result()
             else:
                 result = loop.run_until_complete(self._process_query_async(query, max_rounds))
-            
+
             self.logger.info("Query processing complete")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Error processing query: {e}", exc_info=True)
             return {
@@ -155,33 +180,42 @@ Please work together to answer this query comprehensively:
         research_findings = []
         plan = ""
         critique = ""
-        
+
         for msg in messages:
             source = msg.get("source", "")
             content = msg.get("content", "")
-            
+
             if source == "Planner" and not plan:
                 plan = content
-            
+
             elif source == "Researcher":
                 research_findings.append(content)
-            
+
             elif source == "Critic":
                 critique = content
-        
+
         # Count sources mentioned in research
         num_sources = 0
         for finding in research_findings:
             # Rough count of sources based on numbered results
             num_sources += finding.count("\n1.") + finding.count("\n2.") + finding.count("\n3.")
-        
+
         # Clean up final response
         if final_response:
             final_response = final_response.replace("TERMINATE", "").strip()
-        
+
+        # Check output safety
+        output_safety = self.safety_manager.check_output_safety(final_response)
+        safe_response = output_safety["response"]
+        output_violations = output_safety.get("violations", [])
+
+        # Log if response was modified by safety checks
+        if safe_response != final_response:
+            self.logger.warning("Response modified by safety guardrails")
+
         return {
             "query": query,
-            "response": final_response,
+            "response": safe_response,
             "conversation_history": messages,
             "metadata": {
                 "num_messages": len(messages),
@@ -190,7 +224,10 @@ Please work together to answer this query comprehensively:
                 "research_findings": research_findings,
                 "critique": critique,
                 "agents_involved": list(set([msg.get("source", "") for msg in messages])),
-            }
+                "safety_checks_passed": output_safety["safe"],
+                "output_violations": output_violations,
+            },
+            "safety_events": output_violations
         }
 
     def get_agent_descriptions(self) -> Dict[str, str]:

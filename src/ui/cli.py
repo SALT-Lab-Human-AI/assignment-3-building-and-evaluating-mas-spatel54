@@ -177,26 +177,44 @@ class CLI:
         print("RESPONSE")
         print("=" * 70)
 
-        # Check for errors
+        # Check for errors or blocked queries
         if "error" in result:
             print(f"\n❌ Error: {result['error']}")
+            return
+
+        # Check for safety blocks
+        metadata = result.get("metadata", {})
+        if metadata.get("blocked"):
+            print(f"\n⚠️  Your query was blocked due to safety policies.")
+            safety_events = result.get("safety_events", [])
+            if safety_events:
+                print(f"\nReason: {safety_events[0].get('reason', 'Unknown violation')}")
             return
 
         # Display response
         response = result.get("response", "")
         print(f"\n{response}\n")
 
+        # Display safety events (if any violations occurred but didn't block)
+        safety_events = result.get("safety_events", [])
+        if safety_events:
+            print("\n" + "-" * 70)
+            print("⚠️  SAFETY NOTICES")
+            print("-" * 70)
+            for event in safety_events:
+                severity = event.get("severity", "unknown")
+                print(f"  • [{severity.upper()}] {event.get('reason', 'Unknown')}")
+
         # Extract and display citations from conversation
         citations = self._extract_citations(result)
         if citations:
             print("\n" + "-" * 70)
-            print("📚 CITATIONS")
+            print("📚 CITATIONS & SOURCES")
             print("-" * 70)
             for i, citation in enumerate(citations, 1):
                 print(f"[{i}] {citation}")
 
         # Display metadata
-        metadata = result.get("metadata", {})
         if metadata:
             print("\n" + "-" * 70)
             print("📊 METADATA")
@@ -205,7 +223,18 @@ class CLI:
             print(f"  • Sources gathered: {metadata.get('num_sources', 0)}")
             print(f"  • Agents involved: {', '.join(metadata.get('agents_involved', []))}")
 
-        # Display conversation summary if verbose mode
+            # Safety status
+            if metadata.get("safety_checks_passed") is not None:
+                status = "✓ Passed" if metadata["safety_checks_passed"] else "⚠ Violations detected"
+                print(f"  • Safety checks: {status}")
+
+        # Display agent trace (workflow)
+        print("\n" + "-" * 70)
+        print("🤖 AGENT WORKFLOW")
+        print("-" * 70)
+        self._display_agent_workflow(result.get("conversation_history", []))
+
+        # Display detailed conversation if verbose mode
         if self._should_show_traces():
             self._display_conversation_summary(result.get("conversation_history", []))
 
@@ -233,23 +262,57 @@ class CLI:
         # Check config for verbose mode
         return self.config.get("ui", {}).get("verbose", False)
 
+    def _display_agent_workflow(self, conversation_history: list):
+        """Display a visual representation of the agent workflow."""
+        if not conversation_history:
+            print("  No agent activity recorded")
+            return
+
+        # Track which agents spoke and in what order
+        workflow = []
+        seen_agents = set()
+
+        for msg in conversation_history:
+            agent = msg.get("source", "Unknown")
+            if agent not in seen_agents:
+                workflow.append(agent)
+                seen_agents.add(agent)
+
+        # Display workflow
+        workflow_str = " → ".join(workflow)
+        print(f"  {workflow_str}")
+
+        # Show brief summary of each agent's contribution
+        print("\nAgent contributions:")
+        agent_messages = {}
+        for msg in conversation_history:
+            agent = msg.get("source", "Unknown")
+            if agent not in agent_messages:
+                agent_messages[agent] = []
+            agent_messages[agent].append(msg.get("content", ""))
+
+        for agent in workflow:
+            if agent in agent_messages:
+                count = len(agent_messages[agent])
+                print(f"  • {agent}: {count} message(s)")
+
     def _display_conversation_summary(self, conversation_history: list):
-        """Display a summary of the agent conversation."""
+        """Display a detailed summary of the agent conversation."""
         if not conversation_history:
             return
-            
+
         print("\n" + "-" * 70)
-        print("🔍 CONVERSATION SUMMARY")
+        print("🔍 DETAILED CONVERSATION TRACE")
         print("-" * 70)
-        
+
         for i, msg in enumerate(conversation_history, 1):
             agent = msg.get("source", "Unknown")
             content = msg.get("content", "")
-            
+
             # Truncate long content
-            preview = content[:150] + "..." if len(content) > 150 else content
+            preview = content[:200] + "..." if len(content) > 200 else content
             preview = preview.replace("\n", " ")
-            
+
             print(f"\n{i}. {agent}:")
             print(f"   {preview}")
 
